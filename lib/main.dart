@@ -1,6 +1,11 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'firebase_options.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   runApp(const MyApp());
 }
 
@@ -110,11 +115,28 @@ class TaskList extends StatefulWidget {
 }
 
 class _TaskListState extends State<TaskList> {
-  List<Map<String, dynamic>> tasks = [
-    {"title": "Finish project", "icon": Icons.work, "isComplete": false},
-    {"title": "Go jogging", "icon": Icons.directions_run, "isComplete": false},
-    {"title": "Go gym", "icon": Icons.sports_gymnastics, "isComplete": false},
-  ];
+  final FirebaseFirestore db = FirebaseFirestore.instance;
+  List<Map<String, dynamic>> tasks = [];
+
+  CollectionReference users = FirebaseFirestore.instance.collection('tasks');
+
+  @override
+  void initState() {
+    super.initState();
+    fetchTasks();
+  }
+
+  void fetchTasks() async {
+    QuerySnapshot querySnapshot = await db.collection('tasks').get();
+    setState(() {
+      tasks =
+          querySnapshot.docs.map((doc) {
+            var taskData = doc.data() as Map<String, dynamic>;
+            taskData["docId"] = doc.id; // Store Firestore document ID
+            return taskData;
+          }).toList();
+    });
+  }
 
   List<Map<String, dynamic>> getFilteredTasks() {
     if (widget.filter == 0) {
@@ -124,28 +146,20 @@ class _TaskListState extends State<TaskList> {
     }
   }
 
-  void toggleTaskCompletion(int index) {
-    setState(() {
-      getFilteredTasks()[index]["isComplete"] =
-          !getFilteredTasks()[index]["isComplete"];
-    });
+  void toggleTaskCompletion(String docId, bool isComplete) async {
+    await db.collection('tasks').doc(docId).update({"isComplete": !isComplete});
+    fetchTasks();
   }
 
-  void deleteTask(int index) {
-    setState(() {
-      tasks.removeAt(index);
-    });
+  void deleteTask(String docId) async {
+    await db.collection('tasks').doc(docId).delete();
+    fetchTasks();
   }
 
   final TextEditingController _controller = TextEditingController();
-  void insertTask(String title) {
-    setState(() {
-      tasks.add({
-        "title": title,
-        "icon": Icons.sticky_note_2,
-        "isComplete": false,
-      });
-    });
+  void insertTask(String title) async {
+    await db.collection('tasks').add({"title": title, "isComplete": false});
+    fetchTasks();
   }
 
   void showMyDialog(BuildContext context) {
@@ -186,7 +200,6 @@ class _TaskListState extends State<TaskList> {
               itemBuilder: (context, index) {
                 var item = getFilteredTasks()[index];
                 return ListTile(
-                  leading: Icon(item["icon"]),
                   title: Text(item["title"]),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -198,12 +211,16 @@ class _TaskListState extends State<TaskList> {
                               ? Icons.check_box
                               : Icons.check_box_outline_blank,
                         ),
-                        onPressed: () => toggleTaskCompletion(index),
+                        onPressed:
+                            () => toggleTaskCompletion(
+                              item["docId"],
+                              item["isComplete"],
+                            ),
                       ),
                       // Delete
                       IconButton(
                         icon: Icon(Icons.delete),
-                        onPressed: () => deleteTask(index),
+                        onPressed: () => deleteTask(item["docId"]),
                       ),
                     ],
                   ),
